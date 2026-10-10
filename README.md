@@ -15,6 +15,10 @@ MIDI connection is via JACK or ALSA (or both) hence a working JACK service and/o
 
 Clone this repository, e.g. `git clone git@github.com:riban-bw/nanoKONTROL-Config.git` or download and extract the zip.
 
+## AppImage
+
+Prebuilt AppImages for x86_64 and aarch64 are attached to each [release](https://github.com/cheetahdotcat/nanoKONTROL-Config/releases). Download, `chmod +x` and run. ALSA (and optionally JACK) libraries are used from the host system. To build one locally run `make appimage`.
+
 ## Run with uv
 
 The simplest way to run the application is with [uv](https://docs.astral.sh/uv/), which installs Python and the Python dependencies automatically:
