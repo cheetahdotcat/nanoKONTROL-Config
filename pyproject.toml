@@ -1,0 +1,15 @@
+[project]
+name = "nanokontrol-config"
+version = "0.1.0"
+description = "Configuration tool for Korg nanoKONTROL"
+readme = "README.md"
+license = "GPL-3.0-only"
+requires-python = ">=3.9"
+dependencies = [
+    "alsa-midi",
+    "jack-client",
+    "pillow",
+]
+
+[tool.uv]
+package = false

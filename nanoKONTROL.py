@@ -6,8 +6,10 @@
 #
 # Dependencies: tkinter, jack / alsa, PIL, ImageTk
 
+import os
+import queue
 import struct
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 try:
     import jack
 except:
@@ -23,6 +25,9 @@ from PIL import ImageTk, Image
 from threading import Thread
 import ToolTips
 from datetime import datetime
+
+# Resolve image files relative to this script
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 ev = None # Used to pass MIDI messages for JACK to transmit
 echo_id = 0x00 # Used to identify own sysex messages
@@ -320,7 +325,7 @@ class scene:
         for offset in range(0, len(data), 8):
             block = data[offset:offset+8]
             for word in range(1, len(block)):
-                self.data[i + word - 1] = (block[word] | (block[0] & 1 << (word - 1)))
+                self.data[i + word - 1] = block[word] | (((block[0] >> (word - 1)) & 1) << 7)
             i += 7
 
 
@@ -516,7 +521,7 @@ def send_query_mode():
 #   scene: Requested scene [0..3]
 def send_scene_change_request(scene):
     if(scene >= 0 and scene <= 3):
-        send_command_list((0x1F, 0x14, scene, 0xF7))
+        send_command_list((0x1F, 0x14, scene))
 
 
 # Upload a scene to device 'current scene'
@@ -588,8 +593,8 @@ def source_changed(event=None):
     except Exception as e:
         pass
     try:
+        ports = alsa_client.list_ports(input=True, type=alsa_midi.PortType.ANY)
         for port in ports:
-            ports = alsa_client.list_ports(input=True, type=alsa_midi.PortType.ANY)
             try:
                 alsa_midi_in.disconnect_from(port)
             except Exception as e:
@@ -918,6 +923,43 @@ def restore_last_download():
     set_statusbar('Restored to last downloaded scene', 1)
 
 
+# Default folder for Korg Kontrol Editor scene files
+scene_file_dir = os.path.expanduser('~/Documents/Software/reaper_generic_control/Dist')
+
+
+# Load a Korg Kontrol Editor scene file (.nktrl_data / .nktrl2_data)
+# File is a sequence of 32 byte chunk headers ('ScnS', 'ScnD') with raw 8-bit scene data after the 'ScnD' header
+def load_scene_file():
+    path = filedialog.askopenfilename(
+        title='Load Korg Kontrol Editor scene file',
+        initialdir=scene_file_dir if os.path.isdir(scene_file_dir) else os.path.expanduser('~'),
+        filetypes=[('Korg scene data', '*.nktrl_data *.nktrl2_data'), ('All files', '*')])
+    if not path:
+        return
+    try:
+        with open(path, 'rb') as f:
+            raw = f.read()
+        offset = 0
+        while offset + 32 <= len(raw) and raw[offset + 4:offset + 8] != b'ScnD':
+            offset += 32
+        data = list(raw[offset + 32:])
+        if offset + 32 > len(raw):
+            raise ValueError('No scene data found')
+        if len(data) == 256:
+            type = 'nanoKONTROL1'
+        elif len(data) == 339:
+            type = 'nanoKONTROL2'
+        else:
+            raise ValueError('Unexpected scene data length {}'.format(len(data)))
+    except Exception as e:
+        set_statusbar('Failed to load {}: {}'.format(os.path.basename(path), e), 2)
+        return
+    set_device_type(type)
+    scene_data.data = data
+    populate_editor()
+    set_statusbar('Loaded {} scene from {} - upload to apply to device'.format(type, os.path.basename(path)), 1)
+
+
 # Show application info (about...)
 def show_info():
     msg = 'nanoKONTROL-Config\nriban 2022\n'
@@ -1039,12 +1081,12 @@ def handle_midi_input(indata):
         str += '{:02X} '.format(i)
     set_statusbar(str)
 
-    if len(data) == 14 and data[:2] == (0xF0, 0x7E) and data[3:5] == (0x06, 0x02, 0x42):
+    if len(data) == 15 and data[:2] == (0xF0, 0x7E) and data[3:6] == (0x06, 0x02, 0x42):
         # Device inquiry reply
         scene_data.global_midi_chan = data[2]
-        major = data[12] + (data[13 << 7])
+        major = data[12] + (data[13] << 7)
         minor = data[10] + (data[11] << 7)
-    elif data[:4] == (0xF0, 0x42, 0x50, 0x01) and data[5] == echo_id:
+    elif len(data) >= 14 and data[:4] == (0xF0, 0x42, 0x50, 0x01) and data[5] == echo_id:
         # Search device reply
         scene_data.global_midi_chan = data[4]
         family_id = data[6] + (data[7] << 7)
@@ -1074,14 +1116,16 @@ def handle_midi_input(indata):
         # Command list
         if data[7:13] == (0x7F, 0x7F, 0x02, 0x03, 0x05, 0x40):
             # nanoKONTROL2 data dump
+            set_device_type('nanoKONTROL2')
             scene_data.set_data(data[13:-1])
             scene_backup.data = scene_data.data.copy()
-            set_device_type('nanoKONTROL2')
+            populate_editor()
         elif data[7:13] == (0x7F, 0x7F, 0x02, 0x02, 0x26, 0x40):
             # nanoKONTROL1 data dump
+            set_device_type('nanoKONTROL1')
             scene_data.set_data(data[13:-1])
             scene_backup.data = scene_data.data.copy()
-            set_device_type('nanoKONTROL1')
+            populate_editor()
         elif data[7:10] == (0x5F, 0x23, 0x00):
             # Load data ACK
             set_statusbar('Load data succeded', 1)
@@ -1126,9 +1170,9 @@ def jack_process(frames):
         jack_midi_out.write_midi_event(0, ev)
         ev = None
     
-    # Process incoming messages
+    # Process incoming messages (buffer only valid during callback so copy it)
     for offset, indata in jack_midi_in.incoming_midi_events():
-        handle_midi_input(indata)
+        midi_queue.put(bytes(indata))
         
 
 # Refresh jack MIDI ports
@@ -1163,10 +1207,39 @@ def alsa_midi_in_thread():
     while True:
         event = alsa_client.event_input(prefer_bytes=True)
         try:
-            handle_midi_input(event.midi_bytes)
+            midi_queue.put(bytes(event.midi_bytes))
         except:
             #print(repr(event))
             pass
+
+
+# Process queued MIDI on the Tk thread, reassembling sysex split across events
+def process_midi_queue():
+    global sysex_buffer
+    try:
+        while True:
+            chunk = midi_queue.get_nowait()
+            if chunk is None:
+                refresh_jack_ports()
+                continue
+            if not chunk:
+                continue
+            if chunk[0] == 0xF0:
+                sysex_buffer = bytearray(chunk)
+            elif sysex_buffer is not None and chunk[0] < 0xF8:
+                sysex_buffer += chunk
+            else:
+                handle_midi_input(chunk)
+                continue
+            if sysex_buffer[-1] == 0xF7:
+                msg = bytes(sysex_buffer)
+                sysex_buffer = None
+                handle_midi_input(msg)
+    except queue.Empty:
+        pass
+    except Exception as e:
+        logging.warning('MIDI input error %s', e)
+    root.after(10, process_midi_queue)
 
 
 def auto_connect(force=False):
@@ -1217,6 +1290,8 @@ if alsa_client == jack_client == None:
 current_scene = 0
 source_ports = {} # Dictionary of available MIDI source ports: display_name:[type,port] where type is jack or alsa
 destination_ports = {} # Dictionary of available MIDI destination ports: display_name:[type,port] where type is jack or alsa
+midi_queue = queue.Queue() # Raw MIDI received by JACK / ALSA threads (None requests JACK port refresh)
+sysex_buffer = None # Partial sysex message being reassembled
 
 # Root window
 root = tk.Tk()
@@ -1235,7 +1310,7 @@ tk.Label(root, text='riban nanoKONTROL editor', bg='#80cde0').grid(columnspan=2,
 
 # Top frame
 frame_top = tk.Frame(root, padx=2, pady=2)
-frame_top.columnconfigure(7, weight=1)
+frame_top.columnconfigure(8, weight=1)
 frame_top.grid(row=1, columnspan=2, sticky='enw')
 
 midi_source_port = tk.StringVar()
@@ -1264,9 +1339,11 @@ btn_restore = ttk.Button(frame_top, image=img_restore, command=restore_last_down
 btn_restore.grid(row=0, column=5, rowspan=2)
 btn_info = ttk.Button(frame_top, image=img_info, command=show_info)
 btn_info.grid(row=0, column=6, rowspan=2)
+btn_load = ttk.Button(frame_top, text='Load...', command=load_scene_file)
+btn_load.grid(row=0, column=7, rowspan=2)
 device_info = tk.StringVar()
 lbl_device_info = tk.Label(frame_top, textvariable=device_info)
-lbl_device_info.grid(row=0, column=7, sticky='ne')
+lbl_device_info.grid(row=0, column=8, sticky='ne')
 
 # Control editor frame
 editor_midi_channel = tk.IntVar()
@@ -1392,22 +1469,22 @@ txt_scene_name = tk.Entry(frame_scene, width=12, textvariable=editor_scene_name)
 txt_scene_name.grid(row=0, column=1, sticky='ew')
 
 # Configure variable change event handlers
-editor_midi_channel.trace('w', on_editor_midi_chan)
-editor_midi_channel_is_global.trace('w', on_editor_midi_chan)
-editor_assign.trace('w', on_editor_assign)
-editor_behaviour.trace('w', on_editor_behaviour)
-editor_cmd.trace('w', on_editor_cmd)
-editor_note.trace('w', on_editor_note)
-editor_min.trace('w', on_editor_min)
-editor_max.trace('w', on_editor_max)
-editor_attack.trace('w', on_editor_attack)
-editor_release.trace('w', on_editor_release)
-editor_mmc_cmd.trace('w', on_editor_mmc_cmd)
-editor_mmc_id.trace('w', on_editor_mmc_id)
-editor_global_midi_channel.trace('w', on_editor_global_midi_chan)
-editor_global_led_mode.trace('w', on_editor_global_led_mode)
-editor_control_mode.trace('w', on_editor_control_mode)
-editor_scene_name.trace('w', on_editor_scene_name)
+editor_midi_channel.trace_add('write', on_editor_midi_chan)
+editor_midi_channel_is_global.trace_add('write', on_editor_midi_chan)
+editor_assign.trace_add('write', on_editor_assign)
+editor_behaviour.trace_add('write', on_editor_behaviour)
+editor_cmd.trace_add('write', on_editor_cmd)
+editor_note.trace_add('write', on_editor_note)
+editor_min.trace_add('write', on_editor_min)
+editor_max.trace_add('write', on_editor_max)
+editor_attack.trace_add('write', on_editor_attack)
+editor_release.trace_add('write', on_editor_release)
+editor_mmc_cmd.trace_add('write', on_editor_mmc_cmd)
+editor_mmc_id.trace_add('write', on_editor_mmc_id)
+editor_global_midi_channel.trace_add('write', on_editor_global_midi_chan)
+editor_global_led_mode.trace_add('write', on_editor_global_led_mode)
+editor_control_mode.trace_add('write', on_editor_control_mode)
+editor_scene_name.trace_add('write', on_editor_scene_name)
 
 lbl_statusbar = ttk.Label(root, anchor='w', width=1, background='#cccccc') # width=<any> stops long messages stretching width of display
 lbl_statusbar.grid(row=3, column=0, columnspan=2, sticky='ew')
@@ -1415,7 +1492,7 @@ lbl_statusbar.grid(row=3, column=0, columnspan=2, sticky='ew')
 # Start jack client
 if jack_client:
     jack_client.set_process_callback(jack_process)
-    jack_client.set_graph_order_callback(refresh_jack_ports)
+    jack_client.set_graph_order_callback(lambda: midi_queue.put(None))
 
     # Activate jack client and get available MIDI ports
     jack_client.activate()
@@ -1452,8 +1529,8 @@ img_id_scene_led = canvas.create_image(0, 0, image=photo_img_scene_led)
 set_device_type('nanoKONTROL2')
 
 tooltip_obj = ToolTips.ToolTips(
-    [btn_download, btn_upload, btn_save, btn_restore, btn_info],
-    ['Download from nanoKONTROL', 'Upload to nanoKONTROL', 'Save current scene on nanoKONTROL', 'Restore to last download', 'About']
+    [btn_download, btn_upload, btn_save, btn_restore, btn_info, btn_load],
+    ['Download from nanoKONTROL', 'Upload to nanoKONTROL', 'Save current scene on nanoKONTROL', 'Restore to last download', 'About', 'Load Korg Kontrol Editor scene file']
 )
 
 if alsa_client:
@@ -1462,4 +1539,5 @@ if alsa_client:
 if jack_client:
     refresh_jack_ports()
 
+process_midi_queue()
 root.mainloop()

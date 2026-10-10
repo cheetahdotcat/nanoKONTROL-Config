@@ -15,7 +15,17 @@ MIDI connection is via JACK or ALSA (or both) hence a working JACK service and/o
 
 Clone this repository, e.g. `git clone git@github.com:riban-bw/nanoKONTROL-Config.git` or download and extract the zip.
 
-## Install dependancies
+## Run with uv
+
+The simplest way to run the application is with [uv](https://docs.astral.sh/uv/), which installs Python and the Python dependencies automatically:
+
+```
+uv run nanoKONTROL.py
+```
+
+JACK and/or ALSA libraries must still be installed on the system.
+
+## Install dependancies manually
 
 The application is written in Python3 and tested on GNU/Linux. It should run on any platform that can meet the following dependancies:
 
@@ -48,7 +58,7 @@ Jack can be installed from: https://jackaudio.org/downloads. Configuring with "D
 
 # Usage
 
-To start the application, run `python3 nanoKONTROL.py`
+To start the application, run `uv run nanoKONTROL.py` (or `python3 nanoKONTROL.py` if dependencies were installed manually)
 
 After starting the application, select the MIDI ports to which the nanoKONTROL is connected using the drop-down lists near the top, labelled "MIDI input" and "MIDI output". This is likely to be "nanoKONTROL" or "nanoKONTROL2" unless the device is connected to another machine and MIDI routed. The picture of the device should change to to indicate the device detected.
 
