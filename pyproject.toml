@@ -6,9 +6,10 @@ readme = "README.md"
 license = "GPL-3.0-only"
 requires-python = ">=3.9"
 dependencies = [
-    "alsa-midi",
+    "alsa-midi; sys_platform == 'linux'",
     "jack-client",
     "pillow",
+    "python-rtmidi; sys_platform != 'linux'",
 ]
 
 [tool.uv]

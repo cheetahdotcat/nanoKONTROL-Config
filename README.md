@@ -1,12 +1,12 @@
 # nanoKONTROL-Config
 
-[![AppImage](https://github.com/cheetahdotcat/nanoKONTROL-Config/actions/workflows/appimage.yml/badge.svg)](https://github.com/cheetahdotcat/nanoKONTROL-Config/actions/workflows/appimage.yml)
+[![Build](https://github.com/cheetahdotcat/nanoKONTROL-Config/actions/workflows/build.yml/badge.svg)](https://github.com/cheetahdotcat/nanoKONTROL-Config/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/cheetahdotcat/nanoKONTROL-Config)](https://github.com/cheetahdotcat/nanoKONTROL-Config/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 Configuration tool for Korg nanoKONTROL written in Python.
 
-This is a fork of [riban-bw/nanoKONTROL-Config](https://github.com/riban-bw/nanoKONTROL-Config) adding MIDI input fixes, loading of Korg Kontrol Editor scene files, uv packaging and prebuilt AppImages.
+This is a fork of [riban-bw/nanoKONTROL-Config](https://github.com/riban-bw/nanoKONTROL-Config) adding MIDI input fixes, loading of Korg Kontrol Editor scene files, native MIDI on Windows and macOS, uv packaging and prebuilt AppImages, Windows executables and macOS apps.
 
 Supports nanoKONTROL1
 ![image](https://user-images.githubusercontent.com/3158323/176915252-a606ced7-62b2-42ef-b5da-ecca2c2c3b12.png)
@@ -16,7 +16,7 @@ Supports nanoKONTROL2
 
 This tool provides a graphical user interface allowing configuration of Korg nanoKONTROL1 and nanoKONTROL2 devices. Functionality is broadly similar to Korg's own configuration tool (which I have never seen!). This tool is cross platform and open source.
 
-MIDI connection is via JACK or ALSA (or both) hence a working JACK service and/or ALSA driver must be running before starting the application. It detects new MIDI ports so the device may be connected after starting the application.
+On Linux MIDI connection is via JACK or ALSA (or both) hence a working JACK service and/or ALSA driver must be running before starting the application. On Windows and macOS the native MIDI system is used (WinMM / CoreMIDI, via python-rtmidi) and JACK is used as well if running. New MIDI ports are detected so the device may be connected after starting the application.
 
 # Installation
 
@@ -30,6 +30,20 @@ chmod +x nanoKONTROL-Config-*.AppImage
 ```
 
 ALSA (and optionally JACK) libraries are used from the host system. To build an AppImage locally run `make appimage`; the result is written to `dist/`.
+
+## Windows
+
+Download `nanoKONTROL-Config-*-windows-x86_64.exe` from the [releases](https://github.com/cheetahdotcat/nanoKONTROL-Config/releases) page and run it. The executable is not signed so SmartScreen may warn on first start ("More info" → "Run anyway").
+
+## macOS
+
+Download `nanoKONTROL-Config-*-macos-arm64.zip` (Apple Silicon) or `-macos-x86_64.zip` (Intel) from the [releases](https://github.com/cheetahdotcat/nanoKONTROL-Config/releases) page, unzip and move `nanoKONTROL-Config.app` to Applications. The app is not notarized, so clear the quarantine flag before first start:
+
+```
+xattr -cr /Applications/nanoKONTROL-Config.app
+```
+
+To build the Windows executable or macOS app locally run `make pyinstaller` (on Windows from Git Bash); the result is written to `dist/`.
 
 ## From source
 
@@ -66,19 +80,11 @@ sudo apt install python3-pip
 sudo pip3 install alsa-midi
 ```
 
-On Windows 10 I found I could run the application after installing Python modules: Pillow and jack-client and installing and starting JACK. (The application crashes when trying to import jack if the JACK service is not running.)
-
-```
-python3 -m pip install --upgrade pip
-pip3 install Pillow
-pip3 install jack-client
-```
-
-Jack can be installed from: https://jackaudio.org/downloads. Configuring with "Dummy" audio driver may get it going quickly, e.g. if a supported soundcard is not installed. Adding "-Xwinmme" to the "Advanced" sub-tab of "Settings" tab in QjackCtrl added USB MIDI device to jack graph. I found this added two inputs and four outputs. The second input worked. Not sure about output (poor quality USB MIDI interface available for this test).
+On Windows and macOS install Pillow and python-rtmidi (`pip3 install Pillow python-rtmidi`); `uv run nanoKONTROL.py` does this automatically.
 
 # Usage
 
-To start the application, run the AppImage, `uv run nanoKONTROL.py`, or `python3 nanoKONTROL.py` if dependencies were installed manually.
+To start the application, run the AppImage, Windows executable or macOS app, `uv run nanoKONTROL.py`, or `python3 nanoKONTROL.py` if dependencies were installed manually.
 
 After starting the application, select the MIDI ports to which the nanoKONTROL is connected using the drop-down lists near the top, labelled "MIDI input" and "MIDI output". This is likely to be "nanoKONTROL" or "nanoKONTROL2" unless the device is connected to another machine and MIDI routed. The application tries to connect automatically when a nanoKONTROL is plugged in. The picture of the device should change to indicate the device detected.
 

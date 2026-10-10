@@ -1,4 +1,4 @@
-.PHONY: run sync lock appimage clean
+.PHONY: run sync lock appimage pyinstaller clean
 
 run:
 	uv run nanoKONTROL.py
@@ -11,6 +11,9 @@ lock:
 
 appimage:
 	packaging/build-appimage.sh
+
+pyinstaller:
+	packaging/build-pyinstaller.sh
 
 clean:
 	rm -rf .venv __pycache__ build dist

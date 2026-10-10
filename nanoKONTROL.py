@@ -4,9 +4,10 @@
 # Licencse: GPL V3.0
 # Source: https://github.com/riban-bw/nanoKONTROL-Config
 #
-# Dependencies: tkinter, jack / alsa, PIL, ImageTk
+# Dependencies: tkinter, jack / alsa / rtmidi, PIL, ImageTk
 
 import os
+import sys
 import queue
 import struct
 from tkinter import messagebox, filedialog
@@ -18,6 +19,10 @@ try:
     import alsa_midi 
 except:
     pass
+try:
+    import rtmidi
+except:
+    pass
 import tkinter as tk
 from tkinter import ttk
 import logging
@@ -26,8 +31,8 @@ from threading import Thread
 import ToolTips
 from datetime import datetime
 
-# Resolve image files relative to this script
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+# Resolve image files relative to this script (or the PyInstaller bundle)
+os.chdir(getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))))
 
 ev = None # Used to pass MIDI messages for JACK to transmit
 echo_id = 0x00 # Used to identify own sysex messages
@@ -463,6 +468,11 @@ def send_midi(msg):
         alsa_client.drain_output()
     except:
         pass # ALSA failed but let's try JACk as well
+    try:
+        if rtmidi_out.is_port_open():
+            rtmidi_out.send_message(msg)
+    except:
+        pass
     ev = msg # Very simple slow (single message) JACK MIDI send mechanism
 
 ## Device specific MIDI messages - send from application to device ##
@@ -546,7 +556,7 @@ def populate_alsa_source(event=None):
     ports = alsa_client.list_ports(input=True, type=alsa_midi.PortType.ANY)
     temp_ports = {}
     for port in source_ports:
-        if source_ports[port][0] == 'jack':
+        if source_ports[port][0] != 'alsa':
             temp_ports[port] = source_ports[port]
     source_ports = temp_ports
     for port in ports:
@@ -561,13 +571,44 @@ def populate_alsa_dest(event=None):
     ports = alsa_client.list_ports(output=True, type=alsa_midi.PortType.ANY)
     temp_ports = {}
     for port in destination_ports:
-        if destination_ports[port][0] == 'jack':
+        if destination_ports[port][0] != 'alsa':
             temp_ports[port] = destination_ports[port]
     destination_ports = temp_ports
     for port in ports:
         name = port.client_name + ':' + port.name
         destination_ports[name] = ['alsa', port]
     update_ports()
+
+
+# Replace rtmidi (CoreMIDI / WinMM) ports in global lists of source and destination ports
+def populate_rtmidi(event=None):
+    global source_ports, destination_ports
+    source_ports = {k: v for k, v in source_ports.items() if v[0] != 'rtmidi'}
+    for name in rtmidi_in.get_ports():
+        source_ports[name] = ['rtmidi', name]
+    destination_ports = {k: v for k, v in destination_ports.items() if v[0] != 'rtmidi'}
+    for name in rtmidi_out.get_ports():
+        destination_ports[name] = ['rtmidi', name]
+    update_ports()
+
+
+# Poll for rtmidi ports being added or removed (no hotplug notification available)
+def poll_rtmidi_ports():
+    global rtmidi_port_names
+    try:
+        names = (tuple(rtmidi_in.get_ports()), tuple(rtmidi_out.get_ports()))
+        if names != rtmidi_port_names:
+            rtmidi_port_names = names
+            populate_rtmidi()
+    except Exception as e:
+        logging.warning('MIDI port poll error %s', e)
+    root.after(2000, poll_rtmidi_ports)
+
+
+# Open rtmidi port by name (port indices change as devices come and go)
+def open_rtmidi_port(midi, name):
+    midi.close_port()
+    midi.open_port(midi.get_ports().index(name))
 
 
 # Update drop-down lists of MIDI ports
@@ -593,6 +634,10 @@ def source_changed(event=None):
     except Exception as e:
         pass
     try:
+        rtmidi_in.close_port()
+    except:
+        pass
+    try:
         ports = alsa_client.list_ports(input=True, type=alsa_midi.PortType.ANY)
         for port in ports:
             try:
@@ -607,6 +652,8 @@ def source_changed(event=None):
             jack_midi_in.connect(source_ports[name][1])
         elif source_ports[name][0] == 'alsa':
             alsa_midi_in.connect_from(source_ports[name][1])
+        elif source_ports[name][0] == 'rtmidi':
+            open_rtmidi_port(rtmidi_in, name)
     except Exception as e:
         pass
     send_device_search()
@@ -620,6 +667,10 @@ def destination_changed(event=None):
     try:
         jack_midi_out.disconnect()
     except Exception as e:
+        pass
+    try:
+        rtmidi_out.close_port()
+    except:
         pass
     try:
         ports = alsa_client.list_ports(output=True, type=alsa_midi.PortType.ANY)
@@ -636,6 +687,8 @@ def destination_changed(event=None):
             jack_midi_out.connect(destination_ports[name][1])
         elif destination_ports[name][0] == 'alsa':
             alsa_midi_out.connect_to(destination_ports[name][1])
+        elif destination_ports[name][0] == 'rtmidi':
+            open_rtmidi_port(rtmidi_out, name)
     except Exception as e:
         pass
     send_device_search()
@@ -1182,7 +1235,7 @@ def refresh_jack_ports():
     ports = jack_client.get_ports(is_midi=True, is_input=True)
     temp_ports = {}
     for port in destination_ports:
-        if destination_ports[port][0] == 'alsa':
+        if destination_ports[port][0] != 'jack':
             temp_ports[port] = destination_ports[port]
     destination_ports = temp_ports
     for port in ports:
@@ -1191,7 +1244,7 @@ def refresh_jack_ports():
     ports = jack_client.get_ports(is_midi=True, is_output=True)
     temp_ports = {}
     for port in source_ports:
-        if source_ports[port][0] == 'alsa':
+        if source_ports[port][0] != 'jack':
             temp_ports[port] = source_ports[port]
     source_ports = temp_ports
     for port in ports:
@@ -1281,9 +1334,21 @@ try:
 except:
     pass
 
-if alsa_client == jack_client == None:
-    logging.error('Failed to create ALSA or JACK client')
-    exit(-1)
+# Native MIDI (CoreMIDI on macOS, WinMM on Windows) where ALSA is not available
+rtmidi_in = rtmidi_out = None
+rtmidi_port_names = None
+if alsa_client is None:
+    try:
+        rtmidi_in = rtmidi.MidiIn(name='riban-nanoKonfig')
+        rtmidi_in.ignore_types(sysex=False, timing=True, active_sense=True)
+        rtmidi_in.set_callback(lambda event, data: midi_queue.put(bytes(event[0])))
+        rtmidi_out = rtmidi.MidiOut(name='riban-nanoKonfig')
+    except:
+        rtmidi_in = rtmidi_out = None
+
+if alsa_client == jack_client == rtmidi_in == None:
+    logging.error('Failed to create ALSA, JACK or native MIDI client')
+    sys.exit(-1)
 
 
 # Create UI
@@ -1320,6 +1385,8 @@ cmb_midi_input.bind('<<ComboboxSelected>>', source_changed)
 cmb_midi_input.grid(row=1, column=0, sticky='n')
 if alsa_client:
     cmb_midi_input.bind('<Enter>', populate_alsa_source)
+elif rtmidi_in:
+    cmb_midi_input.bind('<Enter>', populate_rtmidi)
 
 midi_dest_port = tk.StringVar()
 ttk.Label(frame_top, text='MIDI output').grid(row=0, column=1, sticky='w')
@@ -1328,6 +1395,8 @@ cmb_midi_output.bind('<<ComboboxSelected>>', destination_changed)
 cmb_midi_output.grid(row=1, column=1, sticky='n')
 if alsa_client:
     cmb_midi_output.bind('<Enter>', populate_alsa_dest)
+elif rtmidi_in:
+    cmb_midi_output.bind('<Enter>', populate_rtmidi)
 
 btn_download = ttk.Button(frame_top, image=img_transfer_down, command=send_dump_request)
 btn_download.grid(row=0, column=2, rowspan=2)
@@ -1538,6 +1607,8 @@ if alsa_client:
     populate_alsa_dest()
 if jack_client:
     refresh_jack_ports()
+if rtmidi_in:
+    poll_rtmidi_ports()
 
 process_midi_queue()
 root.mainloop()
