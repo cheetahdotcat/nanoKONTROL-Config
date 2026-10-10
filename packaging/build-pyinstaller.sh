@@ -15,21 +15,21 @@ PYTHON_VERSION=${PYTHON_VERSION:-3.12}
 VERSION=${1:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-BUILD=$ROOT/build/pyinstaller
-DIST=$ROOT/dist
-
 case "$(uname -s)" in
-    MINGW*|MSYS*|CYGWIN*) OS=windows; SEP=';'; ARCH=x86_64 ;;
+    MINGW*|MSYS*|CYGWIN*) OS=windows; SEP=';'; ARCH=x86_64; ROOT=$(cd "$ROOT" && pwd -W) ;;
     Darwin) OS=macos; SEP=':'; ARCH=$(uname -m) ;;
     *) echo "Unsupported platform $(uname -s), use build-appimage.sh on Linux" >&2; exit 1 ;;
 esac
+
+BUILD=$ROOT/build/pyinstaller
+DIST=$ROOT/dist
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD" "$DIST"
 cd "$ROOT"
 
 run() {
-    uv run --frozen --no-dev --python "$PYTHON_VERSION" --with pyinstaller "$@"
+    uv run --frozen --no-dev --managed-python --python "$PYTHON_VERSION" --with pyinstaller "$@"
 }
 
 # Square icon generated from the device picture (PyInstaller converts it to .ico / .icns)
@@ -45,7 +45,7 @@ EOF
 
 DATA=()
 for f in *.png LICENSE; do
-    DATA+=(--add-data "$f$SEP.")
+    DATA+=(--add-data "$ROOT/$f$SEP.")
 done
 
 ARGS=(--noconfirm --clean --windowed --name "$APP" --icon "$BUILD/icon.png"
