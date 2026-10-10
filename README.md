@@ -1,5 +1,12 @@
 # nanoKONTROL-Config
+
+[![AppImage](https://github.com/cheetahdotcat/nanoKONTROL-Config/actions/workflows/appimage.yml/badge.svg)](https://github.com/cheetahdotcat/nanoKONTROL-Config/actions/workflows/appimage.yml)
+[![Release](https://img.shields.io/github/v/release/cheetahdotcat/nanoKONTROL-Config)](https://github.com/cheetahdotcat/nanoKONTROL-Config/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
 Configuration tool for Korg nanoKONTROL written in Python.
+
+This is a fork of [riban-bw/nanoKONTROL-Config](https://github.com/riban-bw/nanoKONTROL-Config) adding MIDI input fixes, loading of Korg Kontrol Editor scene files, uv packaging and prebuilt AppImages.
 
 Supports nanoKONTROL1
 ![image](https://user-images.githubusercontent.com/3158323/176915252-a606ced7-62b2-42ef-b5da-ecca2c2c3b12.png)
@@ -13,11 +20,20 @@ MIDI connection is via JACK or ALSA (or both) hence a working JACK service and/o
 
 # Installation
 
-Clone this repository, e.g. `git clone git@github.com:riban-bw/nanoKONTROL-Config.git` or download and extract the zip.
+## AppImage (Linux)
 
-## AppImage
+Prebuilt AppImages for x86_64 and aarch64 are attached to each [release](https://github.com/cheetahdotcat/nanoKONTROL-Config/releases). No Python installation is required. Download the file for your architecture, then:
 
-Prebuilt AppImages for x86_64 and aarch64 are attached to each [release](https://github.com/cheetahdotcat/nanoKONTROL-Config/releases). Download, `chmod +x` and run. ALSA (and optionally JACK) libraries are used from the host system. To build one locally run `make appimage`.
+```
+chmod +x nanoKONTROL-Config-*.AppImage
+./nanoKONTROL-Config-*.AppImage
+```
+
+ALSA (and optionally JACK) libraries are used from the host system. To build an AppImage locally run `make appimage`; the result is written to `dist/`.
+
+## From source
+
+Clone this repository, e.g. `git clone https://github.com/cheetahdotcat/nanoKONTROL-Config.git` or download and extract the zip.
 
 ## Run with uv
 
@@ -27,11 +43,11 @@ The simplest way to run the application is with [uv](https://docs.astral.sh/uv/)
 uv run nanoKONTROL.py
 ```
 
-JACK and/or ALSA libraries must still be installed on the system.
+or `make run`. JACK and/or ALSA libraries must still be installed on the system.
 
-## Install dependancies manually
+## Install dependencies manually
 
-The application is written in Python3 and tested on GNU/Linux. It should run on any platform that can meet the following dependancies:
+The application is written in Python3 and tested on GNU/Linux. It should run on any platform that can meet the following dependencies:
 
 - jack (for JACK MIDI interface)
 - alsa-midi (for ALSA MIDI interface)
@@ -62,9 +78,9 @@ Jack can be installed from: https://jackaudio.org/downloads. Configuring with "D
 
 # Usage
 
-To start the application, run `uv run nanoKONTROL.py` (or `python3 nanoKONTROL.py` if dependencies were installed manually)
+To start the application, run the AppImage, `uv run nanoKONTROL.py`, or `python3 nanoKONTROL.py` if dependencies were installed manually.
 
-After starting the application, select the MIDI ports to which the nanoKONTROL is connected using the drop-down lists near the top, labelled "MIDI input" and "MIDI output". This is likely to be "nanoKONTROL" or "nanoKONTROL2" unless the device is connected to another machine and MIDI routed. The picture of the device should change to to indicate the device detected.
+After starting the application, select the MIDI ports to which the nanoKONTROL is connected using the drop-down lists near the top, labelled "MIDI input" and "MIDI output". This is likely to be "nanoKONTROL" or "nanoKONTROL2" unless the device is connected to another machine and MIDI routed. The application tries to connect automatically when a nanoKONTROL is plugged in. The picture of the device should change to indicate the device detected.
 
 Click the ![image](https://user-images.githubusercontent.com/3158323/176854990-1b05b67f-5ee8-4033-aa6b-4a9b08500a56.png) download button to retrieve a scene from the device.
 
@@ -75,6 +91,8 @@ Click the ![image](https://user-images.githubusercontent.com/3158323/176855266-c
 Click the ![image](https://user-images.githubusercontent.com/3158323/176855361-4ea75e8b-cff0-47c8-bb37-3cf351f40b1d.png) save button to save the scene to the nanoKONTROL's internal persistent memory.
 
 Click the ![image](https://user-images.githubusercontent.com/3158323/176915479-baf8d65f-2365-489f-a51e-11723717cd29.png) restore button to restore the last downloaded scene. This restores locally in the application. To revert the device to its previous state you must then press the upload button.
+
+Click the **Load...** button to open a scene file saved by Korg Kontrol Editor (`.nktrl_data` for nanoKONTROL1, `.nktrl2_data` for nanoKONTROL2). The scene is loaded into the editor only; press the upload button to send it to the device.
 
 # Credits and Licensing
 
