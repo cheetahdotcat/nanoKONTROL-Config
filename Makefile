@@ -1,4 +1,4 @@
-.PHONY: run sync lock clean
+.PHONY: run sync lock appimage clean
 
 run:
 	uv run nanoKONTROL.py
@@ -9,5 +9,8 @@ sync:
 lock:
 	uv lock --upgrade
 
+appimage:
+	packaging/build-appimage.sh
+
 clean:
-	rm -rf .venv __pycache__
+	rm -rf .venv __pycache__ build dist
